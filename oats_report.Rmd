@@ -1,0 +1,467 @@
+---
+title: "統計諮詢：Mid-term Project 2"
+subtitle: "國立成功大學統計學系暨數據科學研究所"
+author: "陳溫茹（R26091040）、廖傑恩（RE6094028)、戴庭筠（R26091032）"
+date: "`r Sys.Date()`"
+geometry: margin = 1in
+fontsize: 12pt
+linestretch: 1.2
+documentclass: ctexart
+output:
+  rticles::ctex:
+    fig_caption: yes
+    number_sections: yes
+    toc: no
+    keep_tex: yes
+classoption: "hyperref, a4paper"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(eval = TRUE, echo = TRUE,
+                      fig.align = 'center', comment = '')
+```
+
+```{r, comment='', message=FALSE, warning=FALSE, echo=FALSE}
+library(HH)
+library(car)
+library(dplyr)
+library(ggplot2)
+data(oats)
+global_mean <- mean(oats$yield)
+I <- length(unique(oats$blocks))
+J <- length(unique(oats$plots))
+K <- length(unique(oats$subplots))
+```
+
+# 問題敘述
+
+本研究想要探討的研究問題為：
+
+1. 不同種類的作物的產量沒有差異。
+2. 氮肥與作物產量有正向線性關聯：氮肥濃度越高，作物產量越多。
+3. 氮肥與作物產量的關聯在不同種類的作物上沒有差異。
+
+# 資料集敘述
+
+關於作物實驗的資料集`oats`是由Yates（1937）收集的，資料有`r nrow(oats)`列、`r ncol(oats)-1`欄，每一列為一個實驗單位的資料。實驗採取裂區設計（split plot designs），實驗的田地被分為`r nrow(oats)`個實驗單位：原始田地被分為`r I`個blocks；每個block被隨機分為`r J`塊plot；每個plot被隨機分為`r K`塊subplot，也就是實驗單位。資料欄位說明如下：
+
+- `yield`: 作物產量，依變項。
+
+- `blocks`: 田地的第一層分裂單位。原始田地被分為`r I`個blocks。
+
+- `plots`: 田地的第二層分裂單位。每一個block被隨機分為`r J`塊plots。
+
+- `variety`: 作物種類，獨變項之一，有`r J`種作物。在每一個block中，`r J`種作物被隨機分配到`r J`塊plot中。
+
+- `subplots`: 田地的第三層分裂單位，也就是實驗單位。每一個plot被隨機分為`r K`塊subplots。
+
+- `nitrogen`: 單一種氮肥的濃度，獨變項之二，有0、0.2、0.4與0.6這`r K`種濃度。在每一個plot中，`r K`種氮肥濃度被隨機分配到`r K`塊subplot中。
+
+# 資料探索
+
+下圖是`r I`個block的作物產量盒鬚圖。可以看出不同block間的產量似乎有所差異，因此在之後的分析中，我們應固定住block對產量的效果。
+
+```{r, comment='', message=FALSE, warning=FALSE, echo=FALSE, fig.height=3}
+library(ggplot2)
+library(dplyr)
+qplot(y = yield, x = factor(blocks), geom = 'boxplot', data = oats) +
+  xlab('blocks') + theme_bw()
+```
+
+下圖是的`r J`種作物的產量盒鬚圖，並以`r I`個block分層來看。可以看到在大部分的block中，不同的作物產量的中位數差異不大。
+
+```{r, comment='', message=FALSE, warning=FALSE, echo=FALSE, fig.height=4}
+oats %>% mutate(blocks = paste0('Block ', blocks)) %>% 
+  qplot(y = yield, x = factor(variety), geom = 'boxplot', data = .) +
+  facet_wrap(. ~ blocks) +
+  xlab('variety') + theme_bw()
+```
+
+下圖是的`r K`種氮肥濃度的產量棒棒糖圖（lollipop plot），並以`r I`個block各`r J`個plots（共`r I*J`個plots）分層來看。在大部分的plot中，似乎都可以看到「氮肥濃度與作物產量呈現正相關」的趨勢。
+
+```{r, comment='', message=FALSE, warning=FALSE, echo=FALSE}
+oats_ <- oats %>% mutate(blocks = paste0('Block ', blocks),
+                         variety = paste0('Variety ', variety),
+                         nitrogen = factor(nitrogen))
+levels(oats_$nitrogen) <- c(0, 0.2, 0.4, 0.6)
+ggplot(aes(y = yield, x = factor(nitrogen)), data = oats_) +
+  geom_point() +
+  geom_segment(aes(y = 0, x = factor(nitrogen), yend = yield, xend = factor(nitrogen))) +
+  xlab('Nitrogen Level') +
+  facet_wrap(variety ~ blocks, ncol = 6) + theme_bw()
+```
+
+# 資料分析
+
+實驗採取裂區設計（split plot designs），實驗的田地被分為`r nrow(oats)`個實驗單位：原始田地被分為`r I`個blocks；每個block被隨機分為`r J`塊plot；每個plot被隨機分為`r K`塊subplot，也就是實驗單位。因應這樣的實驗設計，我們將採取Between-Within混合設計的多因子變異數分析（analysis of variance, ANOVA）。
+
+## 變數與模型定義
+
+令$Y_{ijk}$為block $i$中接受因子A為水準j的固定處置（fixed treatment）以及因子B為水準k的固定處置的實驗單位的作物產量（依變項），其中因子A為作物種類，有3水準（i.e., $j=1,2,3$），因子B為氮肥濃度，有4水準（i.e., $k=1,2,3,4$）。模型定義如下：
+
+\[ Y_{ijk} = \mu + \rho_i + \alpha_j + \eta_{ij} + \beta_k + (\alpha \beta)_{jk} + \epsilon_{ijk} = \mu_{ijk} + \epsilon_{ijk}\]
+
+其中$i=1,...,6$，$j=1,2,3$，$k=1,...,4$；$\mu$為全體總平均；$\rho_i$為block $i$的效果；$\alpha_j$為作物$j$的效果；$\eta_{ij}$為block $i$中第$j$個plot的效果，且$\eta_{ij} \sim N(0, \sigma^2_{\eta})$；$\beta_k$為氮肥濃度$k$的效果；$(\alpha \beta)_{jk}$為作物$j$與氮肥濃度$k$的交互作用；$\epsilon_{ijk}$為block $i$中第$j$個plot中第$k$個subplot的效果，且$\epsilon_{ijk} \sim N(0, \sigma^2_{\epsilon})$。
+
+## 檢查前提假設是否滿足
+
+ANOVA有若干個前提假設（assumption），在進行檢驗之前，我們先檢查資料是否符合這些假設。
+
+1. 獨變項須為類別變數（categorical variable），依變項必須是連續變數（continuous variable）
+
+此分析獨變項為作物種類與氮肥濃度，前者為含有3個水準（level）的類別變數，後者原始雖為連續變數，因為我們只取4種濃度，因此可當作含有4個水準的類別變數；依變項為作物產量，為連續變項。符合。
+
+2. 各組樣本依變項獨立
+
+此分析中，不同種類的作物產量互不影響彼此，不同氮肥濃度下的作物產量也互不影響彼此，符合前提假設。
+
+3. 變異數同質（homogeneity of variance）：各組依變項的變異數必須相等。
+
+- 針對依變項進行常態檢定
+
+有學者宣稱，在常態分布下，以Bartlett檢定變異數同質性會有較高的統計檢定力（power）（Lim & Loh，1996）。不過也有學者則認為以Levene檢定才有較高的統計檢定力。因此我們兩種檢定方式都進行。在進行變異數同質性檢定前，我們先以Shapiro-Wilk常態檢定法對依變項（$Y$）進行常態檢定，檢定的假說如下，顯著水準設定為$0.05$。
+
+$$H_0: Y \sim ND\ \ v.s.\ \ H_1: Y\ does\ not \sim ND$$
+
+```{r, comment='', message=FALSE, warning=FALSE, echo=FALSE}
+sw_test <- shapiro.test(oats$yield)
+```
+
+檢定結果：檢定統計量為`r round(sw_test$statistic, 4)`，其p值為`r round(sw_test$p.value, 4)`，不小於顯著水準，因此我們不拒絕$H_0$，也就是說我們沒有足夠的證據證明母體分配不服從常態分佈。
+
+- 針對依變項進行變異數同質檢定
+
+我們以Bartlett與Levene兩種檢定方法來檢驗依變項變異數同質是否成立，也就是檢驗各作物種類與氮肥濃度之組合下，作物產量變異數是否相同。研究假說如下：
+
+$$ \begin{cases} H_{0}: \sigma_{(jk)}^2 = \sigma_{(jk)'}^2,\ \forall\ i=1,2,3,\ k=1,2,3,4,\ (jk)\neq (jk)'\\ H_1: Not\ H_0 \end{cases}$$
+
+```{r, comment='', message=FALSE, warning=FALSE, echo=FALSE}
+bartlett_ <- oats %>% mutate(group = paste0(variety, nitrogen)) %>% 
+  bartlett.test(yield ~ group, data = .)
+k2 <- round(bartlett_$statistic, 4)
+p_k2 <- round(bartlett_$p.value, 4)
+
+leveneTest_ <- oats %>% mutate(group = paste0(variety, nitrogen)) %>%
+  leveneTest(yield ~ group, data = .)
+l <- round(leveneTest_$`Pr(>F)`[1], 4)
+p_l <- round(leveneTest_$`Pr(>F)`[1], 4)
+```
+
+我們同樣令顯著水準為$0.05$。檢定結果如下表。兩種檢定方法的檢定統計量之p值都不小於顯著水準，因此我們在兩檢定中都不拒絕$H_0$，意味著我們無法證明至少有一組母體變異數與其他組不同，也就是說我們沒有足夠的證據證明變異數同質性不存在，通過此前提假設。
+
+檢定方法          檢定統計量       p值
+-------------  -------------  ----------
+Bartlett          K^2=`r k2`    `r p_k2`   
+Levene             F =`r l`     `r p_l`   
+-------------  -------------  ----------
+
+4. 殘差（residuals）服從常態分配：待配適完模型後診斷。
+
+以上步驟顯示，在我們的資料中，ANOVA的前提假設均滿足（殘差常態假設待檢驗），因此我們可以進行ANOVA。
+
+## 研究假說
+
+我們欲以Between-Within混合的 two-way ANOVA檢驗3個研究問題，其與對應的虛無假設與對立假設陳列如下：
+
+1. 不同種類的作物的產量是否有顯著差異：$H_0: \alpha_j = 0\ \ \forall j = 1,2,3 \quad v.s.\quad H_1: Not\ H_0$。
+
+2. 不同氮肥濃度下，作物產量是否有顯著差異：$H_0: \beta_k = 0\ \ \forall k = 1,2,3,4 \quad v.s.\quad H_1: Not\ H_0$。
+
+3. 氮肥與作物產量的關聯在不同種類的作物上是否有差異，亦即兩者之間有無交互作用：$H_0: (\alpha\beta)_{jk} = 0\ \ \forall j = 1,2,3,\ \forall k = 1,2,3,4 \quad v.s.\quad H_1: Not\ H_0$
+
+```{r, comment='', message=FALSE, warning=FALSE, echo=FALSE}
+### 檢查ANOVA table SS
+
+# total sum of sq
+S <- (oats$yield - mean(oats$yield))^2
+S <- sum(S)
+
+# block SS
+S <- tapply(oats$yield, oats$blocks, mean) - global_mean
+
+# Error: blocks
+S <- tapply(oats$yield, oats$blocks, mean) - global_mean
+a1 <-round(sum(S^2)*3*4,0)
+
+# Error: blocks:plots
+mtx <- tapply(oats$yield, oats[, c('blocks', 'plots')], mean)
+S <- mtx - rowMeans(mtx)
+a2 <- sum(S^2)
+a2 <- round(a2*4, digits = 0)
+
+S <- tapply(oats$yield, oats$variety, mean) - global_mean
+a3 <- sum(S^2)
+a3 <-  round(a3*6*4, digits = 0)
+
+Error1 <- round(a2-a3, digits = 0)
+
+# Error: blocks:plots:subplots
+S <- tapply(oats$yield, oats$variety, mean)
+S <- (S - global_mean)^2
+a4 <- round(sum(S)*I*J, digits = 0)
+
+S <- 15875 + 1786 + 6013 + 20021 + 322 + 7969   
+```
+
+## 分析結果
+
+```{r include=T, echo=F, message=F, warning=F}
+oats_new <- oats %>% mutate(
+  blocks = as.factor(blocks),
+  plots = as.factor(plots),
+  subplots = as.factor(subplots),
+  variety = as.factor(variety),
+  nitrogen = as.factor(nitrogen)
+)
+```
+
+### 主要結果
+
+```{r, comment='', message=FALSE, warning=FALSE, echo=FALSE}
+yatesppl.aov <-
+  aov(yield ~ variety*nitrogen + Error(blocks/plots/subplots), data=oats_new)
+library(rstatix)
+df <- anova_summary(yatesppl.aov, detailed = TRUE)
+df_ <- data.frame(
+  變異來源 = c('殘差：blocks', '作物種類（V）', '殘差：blocks:plots',
+               '氮肥濃度（N）', 'V與N交互作用', '殘差：blocks:plots:subplots'),
+  自由度 = c(5, df$DFn[1], df$DFd[1], df$DFn[-1], df$DFd[2]),
+  平方和 = round(c(15875, df$SSn[1], df$SSd[1], df$SSn[-1], df$SSd[2]))
+)
+df_$均方 = round(df_$平方和 / df_$自由度)
+df_$`F值` = c('', round(df$`F`[1], 2), '', round(df$`F`[-1], 2), '')
+df_$`p值` = c('', round(df$p[1], 2), '', round(df$p[-1], 2), '')
+knitr::kable(df_)
+```
+
+我們的ANOVA模型通過診斷。而由以上的ANOVA結果表可做出以下結論：
+
+1. 不同種類的作物產量並無差異，亦即$\alpha_j = 0\ ; \ \forall j = 1,2,3$。
+
+2. 在施予不同氮肥濃度的情況下，作物產量有所差異，亦即在$k = 1,2,3,4$中，至少有一個$k$使得$\beta_k \ne 0$。
+
+3. 氮肥與作物產量的關聯在不同種類的作物上沒有差異，也就是說作物種類與氮肥濃度之間並無交互作用，亦即$(\alpha\beta)_{jk} = 0\ \ \forall j = 1,2,3,\ \forall k = 1,2,3,4$。
+
+```{r, comment='', message=FALSE, warning=FALSE, echo=FALSE, fig.height=2.8}
+oats_new_2 <- group_by(oats,nitrogen,variety)%>%
+  summarise(yield.mean = mean(yield)) %>% as.data.frame()
+oats_new_2$nitrogen <- oats_new_2$nitrogen %>% as.character()
+oats_new_2$variety <- oats_new_2$variety %>% as.character()
+
+interaction1 <- 
+ggplot(oats_new_2)+
+  geom_line(aes(x = variety , y = yield.mean, group = nitrogen, color = nitrogen), size = 1) +
+  labs(title = "Interaction Plot of\nNitrogen and Varity",
+       x = 'Variety', y = 'Yield', colour = 'Nitrogen') + theme_bw() +
+  theme(legend.position = 'top')
+
+interaction2 <- 
+ggplot(oats_new_2)+
+  geom_line(aes(x = nitrogen , y = yield.mean, group = variety, color = variety), size = 1) +
+  labs(title = "Interaction Plot of\nNitrogen and Varity", 
+       x = 'Nitrogen', y = 'Yield',
+       colour = 'Variety')+ theme_bw() +
+   theme(legend.position = 'top')
+#interaction1
+#interaction2
+gridExtra::grid.arrange(interaction1, interaction2, ncol = 2)
+```
+
+由以上兩張圖可再次確認，種子種類與氮肥之間並無交互作用，且對3種不同的種子而言，氮肥與產量的關係皆為正相關。
+
+### 模型殘差診斷
+
+因為模型假設中有兩個常態假設，我們需做兩次模型診斷，每次診斷都會做常態檢定與變異數同質性檢定，所有檢定的顯著水準均設定為$0.05$。兩個常態假設為$\eta_{ij} \sim N(0, \sigma^2_{\eta})$與$\epsilon_{ijk} \sim N(0, \sigma^2_{\epsilon})$。
+
+#### 診斷1：針對$\eta_{ij}$的診斷
+
+![](./images/residuals_plots_1)
+
+```{r include=F, eval=F, echo=F, message=F, warning=F}
+#oats_new_y_hio <- oats_new %>% group_by(blocks, variety) %>% summarise(y_hio = 2*mean(yield))
+par(mfcol = c(2, 2))
+plot(aov, which = 1)
+plot(aov, which = 3)
+plot(aov, which = 2)
+plot(aov, which = 5)
+ggplot2::autoplot(object = aov_, which=c(1:3, 5))
+```
+
+由四張殘差圖的左上圖可以看出：殘差的期望值大致為零。左下圖顯示標準誤大約為定值，右上圖則顯示殘差大致服從常態分配。接著進行常態與同質變異數檢定來確認，顯著水準均設定為$0.05$。
+
+- 針對$\eta_{ij}$的常態檢定：以Shapiro-Wilk常態檢定法對殘差進行常態檢定，檢定假說：$H_{0}:\ Residuals \sim ND\quad v.s.\quad H_{1}: not\ H_{0}$。
+
+- 針對$\eta_{ij}$的變異數同質性檢定：對殘差進行NCV變異數同質檢定（NCV test），檢定假設為：$H_0$:殘差變異數具有同質性  v.s.  $H_1$:殘差變異數不具有同質性。
+
+下表為檢定結果：
+
+```{r, comment='', message=FALSE, warning=FALSE, echo=FALSE}
+oats_new_y_hio <- data.frame(
+  y_hio = c(286.0, 266.5, 259.5, 183.0, 216.0, 190.0, 174.5, 226.5, 242.5, 184.0, 191.0, 170.5, 165.0, 173.5, 237.0, 179.0, 180.5, 218.0),
+  blocks = factor(rep(1:6, each = 3)),
+  variety = factor(rep(1:3, 6))
+)
+aov_ <- aov(y_hio ~ blocks + variety, data = oats_new_y_hio)
+sw_test_res1 <- shapiro.test(aov_$residuals)
+p.1 <- round(sw_test_res1$p.value, 4)
+W.1 <- round(sw_test_res1$statistic, 4)
+
+fit <- lm(y_hio ~ blocks+ variety, oats_new_y_hio)
+ncv <- car::ncvTest(fit)
+C <- round(ncv$ChiSquare, 4)
+p <- round(ncv$p, 4)
+```
+
+檢定方法          檢定統計量       p值
+-------------  -------------  ----------
+Shapiro-Wilk     W=`r W.1`       `r p.1`   
+NCV               C=`r C`         `r p`   
+-------------  -------------  ----------
+
+在Shapiro-Wilk中，p值大於顯著水準，不拒絕虛無假設，表示我們有足夠證據支持殘差服從常態分配。在NCV中，p值大於顯著水準，不拒絕虛無假設，表示$\eta_{ij}$ 服從常態分配，且具有同質變異數。
+
+#### 診斷2：針對$\epsilon_{ijk}$的診斷
+
+- $\epsilon_{ijk}$的殘差圖
+  
+```{r include=T, echo=F, message=F, warning=F}
+yatesppl.aov.1 <- aov(yield ~ variety * nitrogen + blocks:variety, data = oats_new)
+#autoplot(yatesppl.aov.1)
+```
+
+![](./images/residuals_plots_2)
+
+由四張殘差圖的左上圖可以看出：殘差的期望值大致為零。左下圖顯示標準誤大約為定值，右上圖則顯示殘差大致服從常態分配。接著進行常態與同質變異數檢定來確認，顯著水準均設定為$0.05$。
+
+- 針對$\epsilon_{ijk}$的常態檢定：以Shapiro-Wilk常態檢定法對殘差進行顯著水準為0.05的常態檢定，檢定的假說：$H_{0}:\ Residuals \sim ND\quad v.s.\quad H_{1}: not\ H_{0}$。
+
+- 針對$\epsilon_{ijk}$的變異數同質性檢定：對殘差進行顯著水準為$0.05$的 NCV 變異數同質檢定（NCV test），其檢定假設為：$H_0$:殘差變異數具有同質性  v.s.  $H_1$:殘差變異數不具有同質性。
+
+檢定結果如下表：
+
+```{r, comment='', message=FALSE, warning=FALSE, echo=FALSE}
+res1 <- residuals(yatesppl.aov.1)
+sw_test_res1 <- shapiro.test(res1)
+p.1 <- round(sw_test_res1$p.value, 4)
+W.1 <- round(sw_test_res1$statistic, 4)
+
+library(car)
+fit = lm(yield ~ variety * nitrogen + blocks:variety, data = oats_new)
+ncv <- car::ncvTest(fit)
+C = round(ncv$ChiSquare, 4)
+P = round(ncv$p, 4)
+```
+
+檢定方法          統計量       p值
+-------------  -------------  ----------
+Shapiro-Wilk     W=`r W.1`       `r p.1`   
+NCV              C=`r C`         `r p`   
+-------------  -------------  ----------
+
+在Shapiro-Wilk中，因p值大於顯著水準，不拒絕虛無假設，表示我們有足夠證據支持殘差服從常態分配。在NCV中，因p值大於0.05，不拒絕虛無假設，表示殘差擁有同質變異數。
+
+所有檢定顯示我們的ANOVA模型通過診斷。
+
+### 線性效果之檢驗
+
+根據前面的分析，我們得知在不同氮肥濃度下，至少有一組平均產量與其他組別不同，且根據交互作用圖，我們發現氮肥與產量呈現正相關。在進行事後比較前，我們想進一步確認隨著氮肥濃度增加，產量是如何變化。所以我們在模型中氮肥的效益分成三個部分：線性、平方與立方，並將顯著水準設定為$0.05$，分析結果如下表。
+
+```{r,comment='', message=FALSE, warning=FALSE, echo=FALSE}
+contrasts(oats_new$nitrogen) <- contr.poly(4)
+oats.aov <- aov(yield~ variety*nitrogen+Error(blocks/plots/subplots) ,data=oats_new)
+lst <- summary(oats.aov, expand.split=FALSE,
+              split=list(nitrogen=list(linear=1, quad=2, cub=3)))
+tb <- lst$`Error: blocks:plots:subplots`
+```
+
+變異來源                      自由度         平方和      均方        F值         p值
+--------------------------  -------------  ----------  ----------  ----------  ----------
+氮肥濃度                      3             20021        6674        37.69       2.46e-12 
+  氮肥濃度（線性）            1             19536        19536       110.32      1.09e-13
+  氮肥濃度（平方）            1             480          480         2.71        0.106  
+  氮肥濃度（立方）            1             4            4           0.02         0.887
+作物種類與氮肥濃度交互作用    6             322          54          0.30         0.932
+殘差                          45            7969         177
+--------------------------  -------------  ----------  ----------  ----------  ----------
+
+根據資料計算結果，發現只有線性關係效果的檢定統計量的p值小於顯著水準，其餘p值皆大於顯著水準，表示氮肥與產量間僅有線性關係。加上交互作用圖，可說明氮肥與產量為線性正相關。我們接著進行事後比較來進一步了解氮肥濃度是否對平均產量有顯著差異。
+
+### 事後比較
+
+接著，我們透過事後比較來檢驗作物平均產量是否有隨著氮肥濃度的提升而有顯著增加。因為氮肥各組樣本大小皆相同，因此我們選用Tukey方法進行事後比較，並將整體的信心水準設在$95\%$。以下為檢定假說：
+
+$$H_{0}: \mu_{k_{1}}\leq\mu_{k_{2}}\quad v.s \quad H_{1}: \mu_{k_{1}}>\mu_{k_{2}}$$
+$$\forall k_{1} > k_{2},\quad  (k_1, k_2) = (4,3), (4,2), (4,1), (3,2), (3,1), (2,1)$$
+其中$\mu_{1}$為氮肥濃度為0的平均產量，$\mu_{2}$為氮肥濃度為0.2的平均產量，$\mu_{3}$為氮肥濃度為0.4的平均產量，$\mu_{4}$為氮肥濃度為0.6的平均產量。
+
+下表為兩兩平均差異的95%信賴區間。4為$\mu_{4}$，表示氮肥濃度為0.6的平均作物產量；
+3為$\mu_{3}$，表示氮肥濃度為0.4的平均作物產量；2為$\mu_{2}$，表示氮肥濃度為0.2的平均作物產量；1為$\mu_{1}$，表示氮肥濃度為0的平均作物產量。
+
+```{r,comment='', message=FALSE, warning=FALSE, echo=FALSE, results='hide'}
+contrasts(oats_new$nitrogen) <- contr.treatment(4)
+oats.wrong <- aov(terms(yield~ (blocks*variety)+(nitrogen*variety),
+                        keep.order=TRUE),
+                        data=oats_new)
+library(HH)
+oats.mmc <- mmc(oats.wrong, focus="nitrogen")
+nitrogen.lmat <- contr.poly(4)
+rownames(nitrogen.lmat) <- levels(oats_new$nitrogen)
+oats.mmc <- mmc(
+  oats.wrong, focus="nitrogen",
+  focus.lmat=nitrogen.lmat, alternative = "greater", order.contrasts = TRUE)
+df <- oats.mmc$mca$table %>% as.data.frame()
+colnames(df) <- c('組間差異平均估計值', '標準誤', 'CI下界', 'CI上界')
+```
+
+```{r,comment='', message=FALSE, warning=FALSE, echo=FALSE}
+knitr::kable(round(df, 4)[,-2])
+mmcplot(oats.mmc)
+```
+
+上圖為事後比較分析結果的視覺化，圖中的線為各組兩兩平均差異的$95\%$信賴區間，其中標注為紅色者表示其包含0，也就是說在$95\%$信心水準，兩組平均有顯著差異。
+
+根據事後比較結果的圖表，我們發現，只有濃度0.6的氮肥與濃度0.4的氮肥平均產量差異的95%信賴區間（i.e., $[-1.5150, \infty)$）包含0，表示我們無足夠證據支持氮肥濃度0.6下的平均產量顯著高於氮肥濃度0.4下的平均產量；而其餘兩兩氮肥濃度的配對組別的$95%$信賴區間皆不包含0，表示我們有足夠證據支持：除了濃度0.6與0.4的氮肥之外，基本上濃度高的氮肥平均作物產量大於濃度低的氮肥。
+
+我們最終得到的比較結果：
+
+$$\mu_{4}>\mu_{2}>\mu_{1},\quad \mu_{3}>\mu_{2}>\mu_{1}$$
+
+大致上來說，隨著氮肥濃度增加，平均產量也會提高。但當氮肥濃度由0.4提升為0.6時，平均產量並無顯著提高。
+
+# 結論
+
+1. 不同種類的作物的產量沒有差異。
+
+2. 氮肥與作物產量有正向線性關聯：氮肥濃度越高，作物產量越多。四種氮肥濃度的關係為：$\mu_{4}>\mu_{2}>\mu_{1},\quad \mu_{3}>\mu_{2}>\mu_{1}$。
+
+3. 氮肥與作物產量的關聯在不同種類的作物上沒有差異。
+
+# 附錄
+
+## 線性效果的模型介紹
+
+上述分析有提到在線性效果檢驗部分，我們將氮肥濃度的效益分為線性、平方與立方。於此我們簡單介紹其模型，原本為ANOVA模型，但在此我們轉用線性迴歸解釋。以下為模型公式：
+
+\[ Y_i = \beta_0 + \sum_{j=1}^5 \beta_jx_{ji} +\sum_{j=6}^7\beta_jx_{ji}+\sum_{j=1}^5\sum_{k=6}^7\beta_{j,k}x_{ji}x_{ki}+\beta_{8}x_{8i}+\beta_9x_{8i}^2+\beta_{10}x_{8i}^3 +\sum_{j=6}^7\beta_{j,8}x_{8i}+\beta_{j,9}x_{8i}^2+\beta_{j,10}x_{8i}^3\]
+
+其中$\beta_1,\dots,\beta_5$為第2到第4個集區的係數，以第1個集區作為基本（baseline）。$\beta_6,\beta_7$為第2種、第3種作物的係數，$\beta_8$為氮肥濃度的線性係數，$\beta_9$為氮肥濃度的平方係數，$\beta_10$為氮肥濃度的立方係數。$\beta_{j,k}$為第$j$和$k$項的交互作用項。$\mathbf{X}$為設計矩陣（design matrix），$x_{ij}$為第i個觀察值第j個變數的值。
+
+$$
+x_{ij}=
+\begin{cases}
+0,\ if\ observation_i\ not\ \in variable_j \\
+1,\ if\ observation_i \in variable_j
+\end{cases}
+$$
+
+# 參考資料
+
+1. Heiberger, R. M. & Burt Holland, B. H. (2015). Statistical Analysis and Data Display An Intermediate Course with Examples in R. Springer. 
+
+2. Rutherford, A. (2001). Introducing ANOVA and ANCOVA: a GLM approach. Sage.
+
+3. Lim, T. S., & Loh, W. Y. (1996). A comparison of tests of equality of variances. Computational Statistics & Data Analysis, 22(3), 287-301.
+
+4. Dunnett, C. W. (1955). A multiple comparison procedure for comparing several treatments with a control. Journal of the American Statistical Association, 50(272), 1096-1121.
+
+5. Bland, J. M., & Altman, D. G. (1995). Multiple significance tests: the Bonferroni method. Bmj, 310(6973), 170.
