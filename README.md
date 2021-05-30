@@ -21,7 +21,7 @@ This is the second mid-term project of Statisical Consulting, a course at Depart
 
 2. Run `oats.R` in R console.
 
-If you want to re-build the report, knit `oats_report.Rmd` in RStudio. You may need to install `TeX` and othere related packages first.
+If you want to re-build the report, knit `oats_report.Rmd` in RStudio. You may need to install `TeX` and other related packages first.
 
 ## References
 
