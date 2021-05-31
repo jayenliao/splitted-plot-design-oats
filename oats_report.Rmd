@@ -442,9 +442,9 @@ $$\mu_{4}>\mu_{2}>\mu_{1},\quad \mu_{3}>\mu_{2}>\mu_{1}$$
 
 上述分析有提到在線性效果檢驗部分，我們將氮肥濃度的效益分為線性、平方與立方。於此我們簡單介紹其模型，原本為ANOVA模型，但在此我們轉用線性迴歸解釋。以下為模型公式：
 
-\[ Y_i = \beta_0 + \sum_{j=1}^5 \beta_jx_{ji} +\sum_{j=6}^7\beta_jx_{ji}+\sum_{j=1}^5\sum_{k=6}^7\beta_{j,k}x_{ji}x_{ki}+\beta_{8}x_{8i}+\beta_9x_{8i}^2+\beta_{10}x_{8i}^3 +\sum_{j=6}^7\beta_{j,8}x_{8i}+\beta_{j,9}x_{8i}^2+\beta_{j,10}x_{8i}^3\]
+\[ Y_i = \beta_0 + \sum_{j=1}^5 \beta_jx_{ji} +\sum_{j=6}^7\beta_jx_{ji}+\sum_{j=1}^5\sum_{k=6}^7\beta_{j,k}x_{ji}x_{ki}+\beta_{8}x_{8i}+\beta_9x_{8i}^2+\beta_{10}x_{8i}^3 +\sum_{j=6}^7\beta_{j,8}x_{8i}+\beta_{j,9}x_{8i}^2+\beta_{j,10}x_{8i}^3 + \epsilon_i\]
 
-其中$\beta_1,\dots,\beta_5$為第2到第4個集區的係數，以第1個集區作為基本（baseline）。$\beta_6,\beta_7$為第2種、第3種作物的係數，$\beta_8$為氮肥濃度的線性係數，$\beta_9$為氮肥濃度的平方係數，$\beta_10$為氮肥濃度的立方係數。$\beta_{j,k}$為第$j$和$k$項的交互作用項。$\mathbf{X}$為設計矩陣（design matrix），$x_{ij}$為第i個觀察值第j個變數的值。
+其中$\beta_1,\dots,\beta_5$為第2到第4個集區的係數，以第1個集區作為基本（baseline）。$\beta_6,\beta_7$為第2種、第3種作物的係數，$\beta_8$為氮肥濃度的線性係數，$\beta_9$為氮肥濃度的平方係數，$\beta_10$為氮肥濃度的立方係數。$\beta_{j,k}$為第$j$和$k$項的交互作用項。$\mathbf{X}$為設計矩陣（design matrix），$x_{ij}$為第i個觀察值第j個變數的值。$\epsilon_i$為殘差且$\epsilon_i \sim N(0, \sigma^2)$。
 
 $$
 x_{ij}=
